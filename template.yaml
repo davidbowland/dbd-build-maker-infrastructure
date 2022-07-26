@@ -1,0 +1,292 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Infrastructure for dbowland.com dbd-build-maker project
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - prod
+      - test
+    Description: Environment for deploy
+  PinpointId:
+    Type: String
+    Description: Application ID for analytics
+
+Mappings:
+  EnvironmentMap:
+    prod:
+      certificate: adce1a21-90b4-4120-8548-111215e582f0
+      domain: dbowland.com
+      lambdaBucketName: dbd-build-maker-lambda
+      project: dbd-build-maker
+      roleNameCloudFormation: dbd-build-maker-cloudformation
+      roleNamePipeline: dbd-build-maker-pipeline
+    test:
+      certificate: 6a48cba7-feb9-4de5-8cbf-d383140fcdef
+      domain: bowland.link
+      lambdaBucketName: dbd-build-maker-lambda-test
+      project: dbd-build-maker-test
+      roleNameCloudFormation: dbd-build-maker-cloudformation-test
+      roleNamePipeline: dbd-build-maker-pipeline-test
+
+Resources:
+  # Authorization
+
+  IdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      AllowClassicFlow: false
+      AllowUnauthenticatedIdentities: true
+      IdentityPoolName: !FindInMap [EnvironmentMap, !Ref Environment, project]
+
+  IdentityPoolRoleAttachment:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId: !Ref IdentityPool
+      Roles:
+        'authenticated': !Sub '${AuthenticatedRole.Arn}'
+        'unauthenticated': !Sub '${UnauthenticatedRole.Arn}'
+
+  AuthenticatedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated:
+                - cognito-identity.amazonaws.com
+            Action:
+              - 'sts:AssumeRoleWithWebIdentity'
+            Condition:
+              StringEquals:
+                cognito-identity.amazonaws.com:aud:
+                  - !Ref IdentityPool
+              ForAnyValue:StringLike:
+                cognito-identity.amazonaws.com:amr:
+                  - authenticated
+      PermissionsBoundary: !Sub 'arn:aws:iam::${AWS::AccountId}:policy/root-boundary'
+      Policies:
+        - PolicyName: !Sub
+            - '${Project}-authenticated'
+            - Project: !FindInMap [EnvironmentMap, !Ref Environment, project]
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'mobiletargeting:GetEndpoint'
+                  - 'mobiletargeting:PutEvents'
+                  - 'mobiletargeting:UpdateEndpoint'
+                Resource: !Sub 'arn:aws:mobiletargeting:us-east-1:${AWS::AccountId}:apps/${PinpointId}/*'
+              - Effect: Allow
+                Action: 'mobileanalytics:PutEvents'
+                Resource: '*'
+      Tags:
+        - Key: 'created-by'
+          Value: 'dbd-build-maker-infrastructure'
+        - Key: 'created-for'
+          Value: !FindInMap [EnvironmentMap, !Ref Environment, project]
+        - Key: 'environment'
+          Value: !Ref Environment
+
+  UnauthenticatedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated:
+                - cognito-identity.amazonaws.com
+            Action:
+              - 'sts:AssumeRoleWithWebIdentity'
+            Condition:
+              StringEquals:
+                cognito-identity.amazonaws.com:aud:
+                  - !Ref IdentityPool
+              ForAnyValue:StringLike:
+                cognito-identity.amazonaws.com:amr:
+                  - unauthenticated
+      PermissionsBoundary: !Sub 'arn:aws:iam::${AWS::AccountId}:policy/root-boundary'
+      Policies:
+        - PolicyName: !Sub
+            - '${Project}-unauthenticated'
+            - Project: !FindInMap [EnvironmentMap, !Ref Environment, project]
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'mobiletargeting:GetEndpoint'
+                  - 'mobiletargeting:PutEvents'
+                  - 'mobiletargeting:UpdateEndpoint'
+                Resource: !Sub 'arn:aws:mobiletargeting:us-east-1:${AWS::AccountId}:apps/${PinpointId}/*'
+              - Effect: Allow
+                Action: 'mobileanalytics:PutEvents'
+                Resource: '*'
+      Tags:
+        - Key: 'created-by'
+          Value: 'dbd-build-maker-infrastructure'
+        - Key: 'created-for'
+          Value: !FindInMap [EnvironmentMap, !Ref Environment, project]
+        - Key: 'environment'
+          Value: !Ref Environment
+
+  # Deployment storage
+
+  LambdaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: false
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      BucketName: !FindInMap [EnvironmentMap, !Ref Environment, lambdaBucketName]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: 'created-by'
+          Value: 'dbd-build-maker-infrastructure'
+        - Key: 'created-for'
+          Value: !FindInMap [EnvironmentMap, !Ref Environment, project]
+        - Key: 'environment'
+          Value: !Ref Environment
+
+  # Deployment roles
+
+  CloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - cloudformation.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub
+            - '${Project}-cloudformation'
+            - Project: !FindInMap [EnvironmentMap, !Ref Environment, project]
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                NotAction:
+                  - 'iam:*User'
+                  - 'organizations:*'
+                  - 'account:*'
+                Resource: '*'
+      RoleName: !FindInMap [EnvironmentMap, !Ref Environment, roleNameCloudFormation]
+      Tags:
+        - Key: 'created-by'
+          Value: 'dbd-build-maker-infrastructure'
+        - Key: 'created-for'
+          Value: !FindInMap [EnvironmentMap, !Ref Environment, project]
+        - Key: 'environment'
+          Value: !Ref Environment
+
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub '${AWS::AccountId}'
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub
+            - '${Project}-pipeline'
+            - Project: !FindInMap [EnvironmentMap, !Ref Environment, project]
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'iam:PassRole'
+                Resource: !Sub '${CloudFormationRole.Arn}'
+              - Effect: Allow
+                Action: 'cloudformation:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 's3:DeleteObject'
+                  - 's3:GetObject*'
+                  - 's3:PutObject*'
+                  - 's3:GetBucket*'
+                  - 's3:List*'
+                Resource:
+                  - 'arn:aws:s3:::dbd-build-maker-ui-source/*'
+                  - 'arn:aws:s3:::dbd-build-maker-ui-source'
+                  - 'arn:aws:s3:::dbd-build-maker-ui-test/*'
+                  - 'arn:aws:s3:::dbd-build-maker-ui-test'
+                  - !Sub 'arn:aws:s3:::${LambdaBucket}/*'
+                  - !Sub 'arn:aws:s3:::${LambdaBucket}'
+      RoleName: !FindInMap [EnvironmentMap, !Ref Environment, roleNamePipeline]
+      Tags:
+        - Key: 'created-by'
+          Value: 'dbd-build-maker-infrastructure'
+        - Key: 'created-for'
+          Value: !FindInMap [EnvironmentMap, !Ref Environment, project]
+        - Key: 'environment'
+          Value: !Ref Environment
+
+  # Deployment users
+
+  ApiUser:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+        - PolicyName: !Sub
+            - '${Project}-pipeline'
+            - Project: !FindInMap [EnvironmentMap, !Ref Environment, project]
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'sts:AssumeRole'
+                Resource:
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/dbd-build-maker-pipeline'
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/dbd-build-maker-pipeline-test'
+      Tags:
+        - Key: 'created-by'
+          Value: 'dbd-build-maker-infrastructure'
+        - Key: 'created-for'
+          Value: !FindInMap [EnvironmentMap, !Ref Environment, project]
+        - Key: 'environment'
+          Value: !Ref Environment
+
+  UiUser:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+        - PolicyName: !Sub
+            - '${Project}-pipeline'
+            - Project: !FindInMap [EnvironmentMap, !Ref Environment, project]
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'sts:AssumeRole'
+                Resource:
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/dbd-build-maker-pipeline'
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/dbd-build-maker-pipeline-test'
+      Tags:
+        - Key: 'created-by'
+          Value: 'dbd-build-maker-infrastructure'
+        - Key: 'created-for'
+          Value: !FindInMap [EnvironmentMap, !Ref Environment, project]
+        - Key: 'environment'
+          Value: !Ref Environment
