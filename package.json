@@ -1,6 +1,6 @@
 {
   "name": "dbd-build-maker-infrastructure",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Infrastructure for dbd-build-maker project",
   "author": "David Bowland",
   "engines": {
