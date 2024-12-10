@@ -1,15 +1,16 @@
 name: Pipeline
 
 env:
-  EAST_1_TEMPLATE_NAME: template-east-1.yaml
-  TEMPLATE_NAME: template.yaml
-  TESTING_PIPELINE_EXECUTION_ROLE: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/administrator
-  TESTING_STACK_NAME: dbd-build-maker-infrastructure-test
-  TESTING_EAST_1_STACK_NAME: dbd-build-maker-infrastructure-east-1-test
+  GIT_EMAIL: ${{ secrets.GIT_EMAIL }}
+  HUSKY: 0
+  PROD_EAST_1_STACK_NAME: dbd-build-maker-infrastructure-east-1
   PROD_PIPELINE_EXECUTION_ROLE: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/administrator
   PROD_STACK_NAME: dbd-build-maker-infrastructure
-  PROD_EAST_1_STACK_NAME: dbd-build-maker-infrastructure-east-1
-  HUSKY: 0
+  TEMPLATE_NAME_EAST_1: template-east-1.yaml
+  TEMPLATE_NAME: template.yaml
+  TESTING_EAST_1_STACK_NAME: dbd-build-maker-infrastructure-east-1-test
+  TESTING_PIPELINE_EXECUTION_ROLE: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/administrator
+  TESTING_STACK_NAME: dbd-build-maker-infrastructure-test
 
 on: push
 
@@ -45,7 +46,7 @@ jobs:
         shell: bash
         run: |
           sam deploy --stack-name ${{ env.TESTING_EAST_1_STACK_NAME }} \
-            --template-file ${{ env.EAST_1_TEMPLATE_NAME }} \
+            --template-file ${{ env.TEMPLATE_NAME_EAST_1 }} \
             --region us-east-1 \
             --no-fail-on-empty-changeset \
             --capabilities CAPABILITY_NAMED_IAM \
@@ -93,7 +94,7 @@ jobs:
         shell: bash
         run: |
           sam deploy --stack-name ${{ env.TESTING_EAST_1_STACK_NAME }} \
-            --template-file ${{ env.EAST_1_TEMPLATE_NAME }} \
+            --template-file ${{ env.TEMPLATE_NAME_EAST_1 }} \
             --region us-east-1 \
             --no-fail-on-empty-changeset \
             --capabilities CAPABILITY_NAMED_IAM \
@@ -142,7 +143,7 @@ jobs:
         shell: bash
         run: |
           sam deploy --stack-name ${{ env.PROD_EAST_1_STACK_NAME }} \
-            --template-file ${{ env.EAST_1_TEMPLATE_NAME }} \
+            --template-file ${{ env.TEMPLATE_NAME_EAST_1 }} \
             --region us-east-1 \
             --no-fail-on-empty-changeset \
             --capabilities CAPABILITY_NAMED_IAM
@@ -175,7 +176,7 @@ jobs:
 
       - name: Set git name and email
         run: |
-          git config --local user.email "dbowland1+bot@gmail.com"
+          git config --local user.email "${GIT_EMAIL}"
           git config --local user.name "github-actions[bot]"
       - name: Bump the minor version
         run: npm version minor
